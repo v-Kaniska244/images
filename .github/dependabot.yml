@@ -4,13 +4,13 @@ updates:
     directory: /
     schedule:
       interval: daily
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 50
 
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: daily
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 50
 
   - package-ecosystem: docker
     directories:
@@ -19,12 +19,13 @@ updates:
       - /build/assets
     schedule:
       interval: daily
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 50
 
   - package-ecosystem: devcontainers
     directories:
       - /
       - /src/*
+      - /src/*/.devcontainer
     schedule:
       interval: daily
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 50
