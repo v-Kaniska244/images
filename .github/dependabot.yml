@@ -3,13 +3,13 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
 
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
 
   - package-ecosystem: docker
@@ -18,7 +18,7 @@ updates:
       - /src/*/.devcontainer
       - /build/assets
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
 
   - package-ecosystem: devcontainers
@@ -26,5 +26,5 @@ updates:
       - /
       - /src/*
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
