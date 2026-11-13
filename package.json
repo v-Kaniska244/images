@@ -7,7 +7,7 @@
     "handlebars": "^4.7.7",
     "jsonc": "^2.0.0",
     "mkdirp": "0.5.5",
-    "rimraf": "^3.0.2"
+    "rimraf": "^6.1.4"
   },
   "packageManager": "yarn@4.9.4"
 }
