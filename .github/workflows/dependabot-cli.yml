@@ -119,4 +119,181 @@ jobs:
 
           run_group() {
             case "$1" in
-              github
+              github-actions)
+                run_update github_actions / all-github-actions github-actions
+                ;;
+
+              npm)
+                run_update npm_and_yarn / all-npm-dependencies npm
+                ;;
+
+              docker)
+                if [[ -d repo/.devcontainer ]]; then
+                  root_docker_file="$(
+                    find repo/.devcontainer -maxdepth 1 -type f \
+                      \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name '*.yml' -o -name '*.yaml' \) \
+                      -print -quit
+                  )"
+
+                  if [[ -n "$root_docker_file" ]]; then
+                    run_update docker /.devcontainer all-docker-updates docker-root
+                  fi
+                fi
+
+                for path in repo/src/*/.devcontainer; do
+                  [[ -d "$path" ]] || continue
+                  directory="${path#repo}"
+                  slug="docker-${directory//\//-}"
+                  run_update docker "$directory" all-docker-updates "$slug"
+                done
+
+                if [[ -d repo/build/assets ]]; then
+                  run_update docker /build/assets all-docker-updates docker-build-assets
+                fi
+                ;;
+
+              devcontainers)
+                for path in repo/src/*/.devcontainer; do
+                  [[ -d "$path" ]] || continue
+                  directory="${path#repo}"
+                  directory="${directory%/.devcontainer}"
+                  slug="devcontainers-${directory//\//-}"
+                  run_update devcontainers "$directory" all-devcontainer-updates "$slug"
+                done
+                ;;
+
+              *)
+                echo "::error::Unknown target: $1"
+                exit 2
+                ;;
+            esac
+          }
+
+          if [[ "$TARGET" == "all" ]]; then
+            run_group github-actions
+            run_group npm
+            run_group docker
+            run_group devcontainers
+          else
+            run_group "$TARGET"
+          fi
+
+          exit "$failures"
+
+      - name: Upload Dependabot results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependabot-result
+          path: result.jsonl
+          if-no-files-found: error
+
+  create-pull-requests:
+    if: always() && needs.run-dependabot.result != 'cancelled'
+    needs: run-dependabot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Verify PAT is configured
+        env:
+          DEPENDABOT_PAT: ${{ secrets.DEPENDABOT_PAT }}
+        run: |
+          if [[ -z "$DEPENDABOT_PAT" ]]; then
+            echo "::error::DEPENDABOT_PAT repository secret is missing"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.DEPENDABOT_PAT }}
+          persist-credentials: true
+
+      - name: Download Dependabot results
+        uses: actions/download-artifact@v4
+        with:
+          name: dependabot-result
+          path: dependabot-result
+
+      - name: Create pull requests
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_PAT }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+
+          result="dependabot-result/result.jsonl"
+
+          if [[ ! -s "$result" ]]; then
+            echo "No Dependabot results were produced."
+            exit 0
+          fi
+
+          jq -c 'select(.type == "create_pull_request")' "$result" > events.jsonl
+
+          git config user.email "support@github.com"
+          git config user.name "Dependabot Standalone"
+
+          while IFS= read -r event; do
+            base_sha="$(jq -r '.data["base-commit-sha"] // empty' <<< "$event")"
+            pr_title="$(jq -r '.data["pr-title"] // empty' <<< "$event")"
+            pr_body="$(jq -r '.data["pr-body"] // empty' <<< "$event")"
+            commit_message="$(jq -r '.data["commit-message"] // empty' <<< "$event")"
+
+            [[ -n "$base_sha" && -n "$pr_title" && -n "$commit_message" ]] || {
+              echo "::warning::Skipping malformed Dependabot event"
+              continue
+            }
+
+            branch="dependabot/$(printf '%s' "$commit_message" | sha256sum | cut -d' ' -f1)"
+
+            git switch --detach "$base_sha"
+            git switch -C "$branch"
+
+            while IFS= read -r file; do
+              file_path="$(
+                jq -r '((.directory // "") + "/" + .name) | sub("^/+"; "")' <<< "$file"
+              )"
+              deleted="$(jq -r '.deleted // false' <<< "$file")"
+
+              if [[ "$deleted" == "true" ]]; then
+                git rm -f -- "$file_path" 2>/dev/null || true
+              else
+                mkdir -p "$(dirname "$file_path")"
+                jq -r '.content' <<< "$file" > "$file_path"
+                git add -- "$file_path"
+              fi
+            done < <(jq -c '.data["updated-dependency-files"][]?' <<< "$event")
+
+            if git diff --cached --quiet; then
+              echo "No file changes for: $pr_title"
+              continue
+            fi
+
+            git commit -m "$commit_message"
+            git push --force origin "HEAD:$branch"
+
+            existing_pr="$(
+              gh pr list \
+                --repo "$GITHUB_REPOSITORY" \
+                --head "$branch" \
+                --state open \
+                --json number \
+                --jq '.[0].number // empty'
+            )"
+
+            if [[ -n "$existing_pr" ]]; then
+              echo "Updated existing PR #$existing_pr"
+            else
+              gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base "$DEFAULT_BRANCH" \
+                --head "$branch" \
+                --title "$pr_title" \
+                --body "$pr_body"
+            fi
+          done < events.jsonl
