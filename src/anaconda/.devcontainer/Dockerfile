@@ -10,7 +10,7 @@ RUN chmod +x /tmp/apply_security_patches.sh
 RUN /tmp/apply_security_patches.sh
 
 # Reset and copy updated files with updated privs to keep image size down
-FROM mcr.microsoft.com/devcontainers/base:1-bookworm
+FROM mcr.microsoft.com/devcontainers/base:2-bookworm
 
 ARG USERNAME=vscode
 
@@ -72,3 +72,4 @@ RUN if [ -f "/tmp/conda-tmp/environment.yml" ]; then umask 0002 && /opt/conda/bi
 # [Optional] Uncomment this section to install additional OS packages.
 # RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 #     && apt-get -y install --no-install-recommends <your-package-list-here>
+
