@@ -19,7 +19,7 @@ jobs:
 
     - name: Checkout
       id: checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Smoke test
       env:
@@ -28,3 +28,4 @@ jobs:
       uses: ./.github/actions/smoke-test
       with:
         image: miniconda
+
