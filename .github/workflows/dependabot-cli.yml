@@ -85,6 +85,7 @@ jobs:
           EOF
 
             echo "::group::Dependabot ${manager} ${directory}"
+
             if ! ./dependabot update \
               -f "$job_file" \
               --local repo \
@@ -92,6 +93,7 @@ jobs:
               echo "::error::Dependabot failed for ${manager} at ${directory}"
               failures=1
             fi
+
             echo "::endgroup::"
           }
 
@@ -106,8 +108,17 @@ jobs:
                 ;;
 
               docker)
-                [[ -d repo/.devcontainer ]] &&
-                  run_update docker /.devcontainer all-docker-updates docker-root
+                if [[ -d repo/.devcontainer ]]; then
+                  root_docker_file="$(
+                    find repo/.devcontainer -maxdepth 1 -type f \
+                      \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name '*.yml' -o -name '*.yaml' \) \
+                      -print -quit
+                  )"
+
+                  if [[ -n "$root_docker_file" ]]; then
+                    run_update docker /.devcontainer all-docker-updates docker-root
+                  fi
+                fi
 
                 for path in repo/src/*/.devcontainer; do
                   [[ -d "$path" ]] || continue
@@ -116,13 +127,15 @@ jobs:
                   run_update docker "$directory" all-docker-updates "$slug"
                 done
 
-                [[ -d repo/build/assets ]] &&
+                if [[ -d repo/build/assets ]]; then
                   run_update docker /build/assets all-docker-updates docker-build-assets
+                fi
                 ;;
 
               devcontainers)
-                [[ -d repo/.devcontainer ]] &&
+                if [[ -d repo/.devcontainer ]]; then
                   run_update devcontainers / all-devcontainer-updates devcontainers-root
+                fi
 
                 for path in repo/src/*/.devcontainer; do
                   [[ -d "$path" ]] || continue
@@ -187,10 +200,11 @@ jobs:
           set -Eeuo pipefail
 
           result="dependabot-result/result.jsonl"
-          [[ -s "$result" ]] || {
+
+          if [[ ! -s "$result" ]]; then
             echo "No Dependabot results were produced."
             exit 0
-          }
+          fi
 
           jq -c 'select(.type == "create_pull_request")' "$result" > events.jsonl
 
@@ -214,7 +228,9 @@ jobs:
             git switch -C "$branch"
 
             while IFS= read -r file; do
-              file_path="$(jq -r '((.directory // "") + "/" + .name) | sub("^/"; "")' <<< "$file")"
+              file_path="$(
+                jq -r '((.directory // "") + "/" + .name) | sub("^/+"; "")' <<< "$file"
+              )"
               deleted="$(jq -r '.deleted // false' <<< "$file")"
 
               if [[ "$deleted" == "true" ]]; then
